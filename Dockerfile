@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM ubuntu:23.04 AS base_image
+FROM ubuntu:22.04 AS base_image
 
 WORKDIR /bin
 SHELL ["/bin/bash", "-c"]
@@ -29,6 +29,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get install 
         libz-dev \
         m4 \
         make \
+        patch \
         pkg-config \
         python3 \
         rsync \
@@ -42,17 +43,17 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get install 
 
 FROM base_image AS kernel_download
 WORKDIR /downloads/kernel
-RUN curl --fail-early --location https://github.com/torvalds/linux/archive/refs/tags/v5.10.tar.gz \
+RUN curl --fail-early --location https://github.com/torvalds/linux/archive/refs/tags/v5.4.tar.gz \
         | tar --gzip --extract --strip-components=1 --file -
 
 FROM base_image AS glibc_download
 WORKDIR /downloads/glibc
-RUN curl --fail-early --location https://ftp.gnu.org/gnu/glibc/glibc-2.36.tar.xz \
+RUN curl --fail-early --location https://ftp.gnu.org/gnu/glibc/glibc-2.35.tar.xz \
         | tar --xz --extract --strip-components=1 --file -
 
 FROM base_image AS gcc_download
 WORKDIR /downloads/gcc
-RUN curl --fail-early --location https://ftp.gnu.org/gnu/gcc/gcc-13.2.0/gcc-13.2.0.tar.xz \
+RUN curl --fail-early --location https://ftp.gnu.org/gnu/gcc/gcc-12.2.0/gcc-12.2.0.tar.xz \
         | tar --xz --extract --strip-components=1 --file -
 RUN ./contrib/download_prerequisites
 
@@ -104,21 +105,21 @@ RUN curl --fail-early --location https://www.x.org/releases/X11R7.7/src/lib/libX
 FROM base_image AS build_image
 
 WORKDIR /opt/gcc/aarch64
-RUN curl --fail-early --location https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--glibc--bleeding-edge-2023.08-1.tar.bz2 \
+RUN curl --fail-early --location https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--glibc--bleeding-edge-2022.08-1.tar.bz2 \
         | tar --bzip --extract --strip-components=1 --file -
 WORKDIR /opt/gcc/aarch64/bin
-RUN rm pkg-config
+RUN rm -f pkg-config
 WORKDIR /opt/gcc/armv7
-RUN curl --fail-early --location https://toolchains.bootlin.com/downloads/releases/toolchains/armv7-eabihf/tarballs/armv7-eabihf--glibc--bleeding-edge-2023.08-1.tar.bz2 \
+RUN curl --fail-early --location https://toolchains.bootlin.com/downloads/releases/toolchains/armv7-eabihf/tarballs/armv7-eabihf--glibc--bleeding-edge-2022.08-1.tar.bz2 \
         | tar --bzip --extract --strip-components=1 --file -
 WORKDIR /opt/gcc/armv7/bin
-RUN rm pkg-config
+RUN rm -f pkg-config
 RUN --mount=source=create_symlinks.sh,target=/usr/bin/create_symlinks.sh create_symlinks.sh arm-linux- arm-linux-gnueabihf-
 WORKDIR /opt/gcc/x86_64
-RUN curl --fail-early --location https://toolchains.bootlin.com/downloads/releases/toolchains/x86-64-core-i7/tarballs/x86-64-core-i7--glibc--bleeding-edge-2023.08-1.tar.bz2 \
+RUN curl --fail-early --location https://toolchains.bootlin.com/downloads/releases/toolchains/x86-64-core-i7/tarballs/x86-64-core-i7--glibc--bleeding-edge-2022.08-1.tar.bz2 \
         | tar --bzip --extract --strip-components=1 --file -
 WORKDIR /opt/gcc/x86_64/bin
-RUN rm pkg-config
+RUN rm -f pkg-config
 RUN --mount=source=create_symlinks.sh,target=/usr/bin/create_symlinks.sh create_symlinks.sh x86_64-linux-
 WORKDIR /
 
@@ -146,8 +147,10 @@ FROM build_image AS glibc
 COPY --from=kernel /var/buildlibs/kernel /var/buildlibs/kernel
 COPY --from=glibc_download /downloads/glibc /build/glibc
 WORKDIR /build/glibc/build
+RUN --mount=source=glibc.patch,target=/build/glibc/glibc.patch patch \
+        -u ../sysdeps/unix/sysv/linux/convert_scm_timestamps.c -i /build/glibc/glibc.patch
 RUN --mount=source=configure.sh,target=/usr/bin/configure.sh configure.sh \
-        --enable-kernel=5.10 \
+        --enable-kernel=5.4 \
         --disable-werror \
         --prefix=/usr \
         --with-headers=/var/buildlibs/kernel/usr/include \
